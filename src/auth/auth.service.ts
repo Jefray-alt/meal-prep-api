@@ -1,0 +1,72 @@
+import { ConflictException, Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { JwtService } from '@nestjs/jwt';
+import * as bcrypt from 'bcrypt';
+import { UsersService } from '../users/users.service';
+import { RegisterDto } from './dto/register.dto';
+
+export interface PublicUser {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+}
+
+interface RegisterResult {
+  accessToken: string;
+  refreshToken: string;
+  user: PublicUser;
+}
+
+@Injectable()
+export class AuthService {
+  constructor(
+    private usersService: UsersService,
+    private jwtService: JwtService,
+    private configService: ConfigService,
+  ) {}
+
+  async register(dto: RegisterDto): Promise<RegisterResult> {
+    const email = dto.email.toLowerCase().trim();
+
+    const existing = await this.usersService.findByEmail(email);
+    if (existing) {
+      throw new ConflictException('This email is already in use.');
+    }
+
+    const passwordHash = await bcrypt.hash(dto.password, 12);
+    const user = await this.usersService.create({
+      firstName: dto.firstName,
+      lastName: dto.lastName,
+      email,
+      passwordHash,
+    });
+
+    const accessToken = this.jwtService.sign(
+      { sub: user.id, email: user.email },
+      {
+        secret: this.configService.getOrThrow<string>('JWT_ACCESS_SECRET'),
+        expiresIn: '15m',
+      },
+    );
+
+    const refreshToken = this.jwtService.sign(
+      { sub: user.id },
+      {
+        secret: this.configService.getOrThrow<string>('JWT_REFRESH_SECRET'),
+        expiresIn: '30d',
+      },
+    );
+
+    return {
+      accessToken,
+      refreshToken,
+      user: {
+        id: user.id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+      },
+    };
+  }
+}
