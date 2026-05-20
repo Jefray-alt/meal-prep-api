@@ -1,8 +1,13 @@
-import { ConflictException, Injectable } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { UsersService } from '../users/users.service';
+import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 
 export interface PublicUser {
@@ -12,7 +17,7 @@ export interface PublicUser {
   email: string;
 }
 
-interface RegisterResult {
+interface AuthResult {
   accessToken: string;
   refreshToken: string;
   user: PublicUser;
@@ -26,7 +31,7 @@ export class AuthService {
     private configService: ConfigService,
   ) {}
 
-  async register(dto: RegisterDto): Promise<RegisterResult> {
+  async register(dto: RegisterDto): Promise<AuthResult> {
     const email = dto.email.toLowerCase().trim();
 
     const existing = await this.usersService.findByEmail(email);
@@ -41,6 +46,47 @@ export class AuthService {
       email,
       passwordHash,
     });
+
+    const accessToken = this.jwtService.sign(
+      { sub: user.id, email: user.email },
+      {
+        secret: this.configService.getOrThrow<string>('JWT_ACCESS_SECRET'),
+        expiresIn: '15m',
+      },
+    );
+
+    const refreshToken = this.jwtService.sign(
+      { sub: user.id },
+      {
+        secret: this.configService.getOrThrow<string>('JWT_REFRESH_SECRET'),
+        expiresIn: '30d',
+      },
+    );
+
+    return {
+      accessToken,
+      refreshToken,
+      user: {
+        id: user.id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+      },
+    };
+  }
+
+  async login(dto: LoginDto): Promise<AuthResult> {
+    const email = dto.email.toLowerCase().trim();
+    const user = await this.usersService.findByEmail(email);
+
+    if (!user) {
+      throw new UnauthorizedException('Invalid email or password.');
+    }
+
+    const passwordMatch = await bcrypt.compare(dto.password, user.passwordHash);
+    if (!passwordMatch) {
+      throw new UnauthorizedException('Invalid email or password.');
+    }
 
     const accessToken = this.jwtService.sign(
       { sub: user.id, email: user.email },

@@ -10,6 +10,7 @@ import {
 import { ThrottlerGuard } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { AuthService } from './auth.service';
+import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 
 const REFRESH_TOKEN_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
@@ -27,6 +28,27 @@ export class AuthController {
   ) {
     const { accessToken, refreshToken, user } =
       await this.authService.register(dto);
+
+    res.cookie('refresh_token', refreshToken, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'strict',
+      path: '/auth/refresh',
+      maxAge: REFRESH_TOKEN_MAX_AGE_MS,
+    });
+
+    return { accessToken, user };
+  }
+
+  @Post('login')
+  @UseGuards(ThrottlerGuard)
+  @HttpCode(HttpStatus.OK)
+  async login(
+    @Body() dto: LoginDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const { accessToken, refreshToken, user } =
+      await this.authService.login(dto);
 
     res.cookie('refresh_token', refreshToken, {
       httpOnly: true,

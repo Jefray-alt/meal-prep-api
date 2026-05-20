@@ -1,13 +1,15 @@
-import { ConflictException } from '@nestjs/common';
+import { ConflictException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
 import { UsersService } from '../users/users.service';
 import { AuthService } from './auth.service';
+import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 
 jest.mock('bcrypt', () => ({
   hash: jest.fn().mockResolvedValue('hashed'),
+  compare: jest.fn(),
 }));
 
 import * as bcrypt from 'bcrypt';
@@ -131,6 +133,63 @@ describe('AuthService', () => {
         new ConflictException('This email is already in use.'),
       );
       expect(usersService.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('login', () => {
+    const loginDto: LoginDto = {
+      email: 'Jane@Example.com',
+      password: 'supersecret123',
+    };
+
+    it('returns accessToken, refreshToken, and user on valid credentials', async () => {
+      usersService.findByEmail.mockResolvedValue(savedUser);
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+
+      const result = await service.login(loginDto);
+
+      expect(usersService.findByEmail).toHaveBeenCalledWith('jane@example.com');
+      expect(bcrypt.compare).toHaveBeenCalledWith(
+        loginDto.password,
+        savedUser.passwordHash,
+      );
+      expect(result).toEqual({
+        accessToken: 'token',
+        refreshToken: 'token',
+        user: {
+          id: 'uuid-1',
+          firstName: 'Jane',
+          lastName: 'Doe',
+          email: 'jane@example.com',
+        },
+      });
+    });
+
+    it('normalises the email to lowercase before lookup', async () => {
+      usersService.findByEmail.mockResolvedValue(savedUser);
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+
+      await service.login(loginDto);
+
+      expect(usersService.findByEmail).toHaveBeenCalledWith('jane@example.com');
+    });
+
+    it('throws UnauthorizedException when email is not found', async () => {
+      usersService.findByEmail.mockResolvedValue(null);
+
+      await expect(service.login(loginDto)).rejects.toThrow(
+        new UnauthorizedException('Invalid email or password.'),
+      );
+      expect(bcrypt.compare).not.toHaveBeenCalled();
+    });
+
+    it('throws UnauthorizedException when password does not match', async () => {
+      usersService.findByEmail.mockResolvedValue(savedUser);
+      (bcrypt.compare as jest.Mock).mockResolvedValue(false);
+
+      await expect(service.login(loginDto)).rejects.toThrow(
+        new UnauthorizedException('Invalid email or password.'),
+      );
     });
   });
 });
