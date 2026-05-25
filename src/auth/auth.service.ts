@@ -7,6 +7,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
+import { randomUUID } from 'crypto';
 import { UsersService } from '../users/users.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
@@ -39,6 +40,26 @@ export class AuthService {
     return this.configService.getOrThrow<string>('REFRESH_TOKEN_HMAC_SECRET');
   }
 
+  private signAccessToken(userId: string, email: string): string {
+    return this.jwtService.sign(
+      { sub: userId, email },
+      {
+        secret: this.configService.getOrThrow<string>('JWT_ACCESS_SECRET'),
+        expiresIn: '15m',
+      },
+    );
+  }
+
+  private signRefreshToken(userId: string): string {
+    return this.jwtService.sign(
+      { sub: userId, jti: randomUUID() },
+      {
+        secret: this.configService.getOrThrow<string>('JWT_REFRESH_SECRET'),
+        expiresIn: '30d',
+      },
+    );
+  }
+
   async register(dto: RegisterDto): Promise<AuthResult> {
     const email = dto.email.toLowerCase().trim();
 
@@ -55,21 +76,8 @@ export class AuthService {
       passwordHash,
     });
 
-    const accessToken = this.jwtService.sign(
-      { sub: user.id, email: user.email },
-      {
-        secret: this.configService.getOrThrow<string>('JWT_ACCESS_SECRET'),
-        expiresIn: '15m',
-      },
-    );
-
-    const refreshToken = this.jwtService.sign(
-      { sub: user.id },
-      {
-        secret: this.configService.getOrThrow<string>('JWT_REFRESH_SECRET'),
-        expiresIn: '30d',
-      },
-    );
+    const accessToken = this.signAccessToken(user.id, user.email);
+    const refreshToken = this.signRefreshToken(user.id);
 
     await this.usersService.updateRefreshTokenHash(
       user.id,
@@ -101,21 +109,8 @@ export class AuthService {
       throw new UnauthorizedException('Invalid email or password.');
     }
 
-    const accessToken = this.jwtService.sign(
-      { sub: user.id, email: user.email },
-      {
-        secret: this.configService.getOrThrow<string>('JWT_ACCESS_SECRET'),
-        expiresIn: '15m',
-      },
-    );
-
-    const refreshToken = this.jwtService.sign(
-      { sub: user.id },
-      {
-        secret: this.configService.getOrThrow<string>('JWT_REFRESH_SECRET'),
-        expiresIn: '30d',
-      },
-    );
+    const accessToken = this.signAccessToken(user.id, user.email);
+    const refreshToken = this.signRefreshToken(user.id);
 
     await this.usersService.updateRefreshTokenHash(
       user.id,
@@ -156,6 +151,7 @@ export class AuthService {
     }
 
     const incomingHash = hashToken(token, this.hmacSecret());
+
     if (!safeCompareHex(incomingHash, user.refreshTokenHash)) {
       await this.usersService.updateRefreshTokenHash(user.id, null);
       this.logger.warn(
@@ -164,21 +160,8 @@ export class AuthService {
       throw new UnauthorizedException();
     }
 
-    const accessToken = this.jwtService.sign(
-      { sub: user.id, email: user.email },
-      {
-        secret: this.configService.getOrThrow<string>('JWT_ACCESS_SECRET'),
-        expiresIn: '15m',
-      },
-    );
-
-    const newRefreshToken = this.jwtService.sign(
-      { sub: user.id },
-      {
-        secret: this.configService.getOrThrow<string>('JWT_REFRESH_SECRET'),
-        expiresIn: '30d',
-      },
-    );
+    const accessToken = this.signAccessToken(user.id, user.email);
+    const newRefreshToken = this.signRefreshToken(user.id);
 
     await this.usersService.updateRefreshTokenHash(
       user.id,
