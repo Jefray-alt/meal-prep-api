@@ -9,6 +9,7 @@ const mockUser: User = {
   lastName: 'Doe',
   email: 'jane@example.com',
   passwordHash: 'hashed',
+  refreshTokenHash: null,
   createdAt: new Date(),
   updatedAt: new Date(),
 };
@@ -19,6 +20,7 @@ describe('UsersService', () => {
     findOne: jest.fn(),
     create: jest.fn(),
     save: jest.fn(),
+    update: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -70,6 +72,49 @@ describe('UsersService', () => {
       });
       expect(repoMock.save).toHaveBeenCalledWith(mockUser);
       expect(result).toBe(mockUser);
+    });
+  });
+
+  describe('findById', () => {
+    it('returns the user when found', async () => {
+      repoMock.findOne.mockResolvedValue(mockUser);
+
+      const result = await service.findById('uuid-1');
+
+      expect(result).toBe(mockUser);
+      expect(repoMock.findOne).toHaveBeenCalledWith({
+        where: { id: 'uuid-1' },
+      });
+    });
+
+    it('returns null when not found', async () => {
+      repoMock.findOne.mockResolvedValue(null);
+
+      const result = await service.findById('unknown');
+
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('updateRefreshTokenHash', () => {
+    it('calls repo.update with the given id and hash', async () => {
+      repoMock.update.mockResolvedValue({ affected: 1 });
+
+      await service.updateRefreshTokenHash('uuid-1', 'abc123');
+
+      expect(repoMock.update).toHaveBeenCalledWith('uuid-1', {
+        refreshTokenHash: 'abc123',
+      });
+    });
+
+    it('calls repo.update with null to clear the hash', async () => {
+      repoMock.update.mockResolvedValue({ affected: 1 });
+
+      await service.updateRefreshTokenHash('uuid-1', null);
+
+      expect(repoMock.update).toHaveBeenCalledWith('uuid-1', {
+        refreshTokenHash: null,
+      });
     });
   });
 });

@@ -11,6 +11,10 @@ export class UsersService {
     return this.repo.findOne({ where: { email } });
   }
 
+  findById(id: string): Promise<User | null> {
+    return this.repo.findOne({ where: { id } });
+  }
+
   create(data: {
     firstName: string;
     lastName: string;
@@ -18,5 +22,9 @@ export class UsersService {
     passwordHash: string;
   }): Promise<User> {
     return this.repo.save(this.repo.create(data));
+  }
+
+  async updateRefreshTokenHash(id: string, hash: string | null): Promise<void> {
+    await this.repo.update(id, { refreshTokenHash: hash });
   }
 }

@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
 import { UsersService } from '../users/users.service';
+import { hashToken } from './token.utils';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
@@ -13,6 +14,10 @@ jest.mock('bcrypt', () => ({
 }));
 
 import * as bcrypt from 'bcrypt';
+
+const HMAC_SECRET = 'hmac-secret';
+const ACCESS_SECRET = 'access-secret';
+const REFRESH_SECRET = 'refresh-secret';
 
 const dto: RegisterDto = {
   firstName: 'Jane',
@@ -27,6 +32,7 @@ const savedUser = {
   lastName: 'Doe',
   email: 'jane@example.com',
   passwordHash: 'hashed',
+  refreshTokenHash: null as string | null,
   createdAt: new Date(),
   updatedAt: new Date(),
 };
@@ -43,15 +49,29 @@ describe('AuthService', () => {
         AuthService,
         {
           provide: UsersService,
-          useValue: { findByEmail: jest.fn(), create: jest.fn() },
+          useValue: {
+            findByEmail: jest.fn(),
+            findById: jest.fn(),
+            create: jest.fn(),
+            updateRefreshTokenHash: jest.fn(),
+          },
         },
         {
           provide: JwtService,
-          useValue: { sign: jest.fn().mockReturnValue('token') },
+          useValue: {
+            sign: jest.fn().mockReturnValue('token'),
+            verify: jest.fn(),
+          },
         },
         {
           provide: ConfigService,
-          useValue: { getOrThrow: jest.fn().mockReturnValue('secret') },
+          useValue: {
+            getOrThrow: jest.fn().mockImplementation((key: string) => {
+              if (key === 'REFRESH_TOKEN_HMAC_SECRET') return HMAC_SECRET;
+              if (key === 'JWT_ACCESS_SECRET') return ACCESS_SECRET;
+              return REFRESH_SECRET;
+            }),
+          },
         },
       ],
     }).compile();
@@ -63,6 +83,12 @@ describe('AuthService', () => {
 
     jest.clearAllMocks();
     (bcrypt.hash as jest.Mock).mockResolvedValue('hashed');
+    jwtService.sign.mockReturnValue('token');
+    configService.getOrThrow.mockImplementation((key: string) => {
+      if (key === 'REFRESH_TOKEN_HMAC_SECRET') return HMAC_SECRET;
+      if (key === 'JWT_ACCESS_SECRET') return ACCESS_SECRET;
+      return REFRESH_SECRET;
+    });
   });
 
   describe('register', () => {
@@ -108,21 +134,30 @@ describe('AuthService', () => {
     it('signs the access token with correct payload and options', async () => {
       usersService.findByEmail.mockResolvedValue(null);
       usersService.create.mockResolvedValue(savedUser);
-      configService.getOrThrow.mockImplementation((key: string) =>
-        key === 'JWT_ACCESS_SECRET' ? 'access-secret' : 'refresh-secret',
-      );
 
       await service.register(dto);
 
       expect(jwtService.sign).toHaveBeenNthCalledWith(
         1,
         { sub: 'uuid-1', email: 'jane@example.com' },
-        { secret: 'access-secret', expiresIn: '15m' },
+        { secret: ACCESS_SECRET, expiresIn: '15m' },
       );
       expect(jwtService.sign).toHaveBeenNthCalledWith(
         2,
         { sub: 'uuid-1' },
-        { secret: 'refresh-secret', expiresIn: '30d' },
+        { secret: REFRESH_SECRET, expiresIn: '30d' },
+      );
+    });
+
+    it('stores the HMAC of the issued refresh token on the user', async () => {
+      usersService.findByEmail.mockResolvedValue(null);
+      usersService.create.mockResolvedValue(savedUser);
+
+      await service.register(dto);
+
+      expect(usersService.updateRefreshTokenHash).toHaveBeenCalledWith(
+        'uuid-1',
+        hashToken('token', HMAC_SECRET),
       );
     });
 
@@ -174,6 +209,18 @@ describe('AuthService', () => {
       expect(usersService.findByEmail).toHaveBeenCalledWith('jane@example.com');
     });
 
+    it('stores the HMAC of the issued refresh token on the user', async () => {
+      usersService.findByEmail.mockResolvedValue(savedUser);
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+
+      await service.login(loginDto);
+
+      expect(usersService.updateRefreshTokenHash).toHaveBeenCalledWith(
+        'uuid-1',
+        hashToken('token', HMAC_SECRET),
+      );
+    });
+
     it('throws UnauthorizedException when email is not found', async () => {
       usersService.findByEmail.mockResolvedValue(null);
 
@@ -190,6 +237,108 @@ describe('AuthService', () => {
       await expect(service.login(loginDto)).rejects.toThrow(
         new UnauthorizedException('Invalid email or password.'),
       );
+    });
+  });
+
+  describe('refresh', () => {
+    const validToken = 'valid.refresh.token';
+
+    it('returns new accessToken and newRefreshToken when token is valid and hash matches', async () => {
+      const storedHash = hashToken(validToken, HMAC_SECRET);
+      const userWithHash = { ...savedUser, refreshTokenHash: storedHash };
+      jwtService.verify.mockReturnValue({
+        sub: 'uuid-1',
+        email: 'jane@example.com',
+      });
+      usersService.findById.mockResolvedValue(userWithHash);
+      jwtService.sign
+        .mockReturnValueOnce('new.access.token')
+        .mockReturnValueOnce('new.refresh.token');
+
+      const result = await service.refresh(validToken);
+
+      expect(result).toEqual({
+        accessToken: 'new.access.token',
+        newRefreshToken: 'new.refresh.token',
+      });
+      expect(usersService.updateRefreshTokenHash).toHaveBeenCalledWith(
+        'uuid-1',
+        hashToken('new.refresh.token', HMAC_SECRET),
+      );
+    });
+
+    it('throws UnauthorizedException when token is undefined', async () => {
+      await expect(service.refresh(undefined)).rejects.toThrow(
+        UnauthorizedException,
+      );
+      expect(jwtService.verify).not.toHaveBeenCalled();
+    });
+
+    it('throws UnauthorizedException when JWT is invalid or expired', async () => {
+      jwtService.verify.mockImplementation(() => {
+        throw new Error('jwt expired');
+      });
+
+      await expect(service.refresh(validToken)).rejects.toThrow(
+        UnauthorizedException,
+      );
+    });
+
+    it('throws UnauthorizedException when user is not found', async () => {
+      jwtService.verify.mockReturnValue({ sub: 'uuid-1' });
+      usersService.findById.mockResolvedValue(null);
+
+      await expect(service.refresh(validToken)).rejects.toThrow(
+        UnauthorizedException,
+      );
+    });
+
+    it('clears refreshTokenHash and throws UnauthorizedException on replay (hash mismatch)', async () => {
+      const userWithHash = {
+        ...savedUser,
+        refreshTokenHash: hashToken('different.token', HMAC_SECRET),
+      };
+      jwtService.verify.mockReturnValue({
+        sub: 'uuid-1',
+        email: 'jane@example.com',
+      });
+      usersService.findById.mockResolvedValue(userWithHash);
+
+      await expect(service.refresh(validToken)).rejects.toThrow(
+        UnauthorizedException,
+      );
+      expect(usersService.updateRefreshTokenHash).toHaveBeenCalledWith(
+        'uuid-1',
+        null,
+      );
+    });
+  });
+
+  describe('logout', () => {
+    it('clears refreshTokenHash when a valid token is present', async () => {
+      jwtService.verify.mockReturnValue({ sub: 'uuid-1' });
+      usersService.findById.mockResolvedValue(savedUser);
+
+      await service.logout('valid.token');
+
+      expect(usersService.updateRefreshTokenHash).toHaveBeenCalledWith(
+        'uuid-1',
+        null,
+      );
+    });
+
+    it('returns without error when token is undefined', async () => {
+      await expect(service.logout(undefined)).resolves.toBeUndefined();
+      expect(jwtService.verify).not.toHaveBeenCalled();
+    });
+
+    it('swallows errors and still resolves when JWT verification fails', async () => {
+      jwtService.verify.mockImplementation(() => {
+        throw new Error('jwt malformed');
+      });
+
+      await expect(service.logout('bad.token')).resolves.toBeUndefined();
+      expect(usersService.updateRefreshTokenHash).not.toHaveBeenCalled();
     });
   });
 });

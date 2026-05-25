@@ -4,16 +4,20 @@ import {
   HttpCode,
   HttpStatus,
   Post,
+  Req,
   Res,
   UseGuards,
 } from '@nestjs/common';
-import { ThrottlerGuard } from '@nestjs/throttler';
+import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import type { Response } from 'express';
+import type { TypedRequest } from '../types/typed-request';
 import { AuthService } from './auth.service';
+import {
+  REFRESH_COOKIE_OPTIONS,
+  REFRESH_TOKEN_MAX_AGE_MS,
+} from './auth.constants';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
-
-const REFRESH_TOKEN_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 
 @Controller('auth')
 export class AuthController {
@@ -30,10 +34,7 @@ export class AuthController {
       await this.authService.register(dto);
 
     res.cookie('refresh_token', refreshToken, {
-      httpOnly: true,
-      secure: true,
-      sameSite: 'strict',
-      path: '/auth/refresh',
+      ...REFRESH_COOKIE_OPTIONS,
       maxAge: REFRESH_TOKEN_MAX_AGE_MS,
     });
 
@@ -51,13 +52,44 @@ export class AuthController {
       await this.authService.login(dto);
 
     res.cookie('refresh_token', refreshToken, {
-      httpOnly: true,
-      secure: true,
-      sameSite: 'strict',
-      path: '/auth/refresh',
+      ...REFRESH_COOKIE_OPTIONS,
       maxAge: REFRESH_TOKEN_MAX_AGE_MS,
     });
 
     return { accessToken, user };
+  }
+
+  @Post('refresh')
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 10, ttl: 900_000 } })
+  @HttpCode(HttpStatus.OK)
+  async refresh(
+    @Req() req: TypedRequest,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const token = req.cookies.refresh_token;
+    const { accessToken, newRefreshToken } =
+      await this.authService.refresh(token);
+
+    res.cookie('refresh_token', newRefreshToken, {
+      ...REFRESH_COOKIE_OPTIONS,
+      maxAge: REFRESH_TOKEN_MAX_AGE_MS,
+    });
+
+    return { accessToken };
+  }
+
+  @Post('logout')
+  @HttpCode(HttpStatus.OK)
+  async logout(
+    @Req() req: TypedRequest,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const token = req.cookies.refresh_token;
+    await this.authService.logout(token);
+
+    res.clearCookie('refresh_token', REFRESH_COOKIE_OPTIONS);
+
+    return { message: 'Logged out' };
   }
 }

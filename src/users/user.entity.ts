@@ -23,6 +23,14 @@ export class User {
   @Column({ name: 'password_hash', length: 255 })
   passwordHash: string;
 
+  @Column({
+    name: 'refresh_token_hash',
+    type: 'varchar',
+    nullable: true,
+    default: null,
+  })
+  refreshTokenHash: string | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 
