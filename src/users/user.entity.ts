@@ -8,31 +8,31 @@ import {
 
 @Entity('users')
 export class User {
-  @PrimaryGeneratedColumn('uuid')
-  id: string;
-
-  @Column({ name: 'first_name', length: 100 })
-  firstName: string;
-
-  @Column({ name: 'last_name', length: 100 })
-  lastName: string;
+  @CreateDateColumn({ name: 'created_at' })
+  createdAt: Date;
 
   @Column({ length: 255, unique: true })
   email: string;
 
-  @Column({ name: 'password_hash', length: 255 })
+  @Column({ length: 100, name: 'first_name' })
+  firstName: string;
+
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column({ length: 100, name: 'last_name' })
+  lastName: string;
+
+  @Column({ length: 255, name: 'password_hash' })
   passwordHash: string;
 
   @Column({
-    name: 'refresh_token_hash',
-    type: 'varchar',
-    nullable: true,
     default: null,
+    name: 'refresh_token_hash',
+    nullable: true,
+    type: 'varchar',
   })
-  refreshTokenHash: string | null;
-
-  @CreateDateColumn({ name: 'created_at' })
-  createdAt: Date;
+  refreshTokenHash: null | string;
 
   @UpdateDateColumn({ name: 'updated_at' })
   updatedAt: Date;

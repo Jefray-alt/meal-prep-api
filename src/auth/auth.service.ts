@@ -8,16 +8,17 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { randomUUID } from 'crypto';
+
 import { UsersService } from '../users/users.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { hashToken, safeCompareHex } from './token.utils';
 
 export interface PublicUser {
-  id: string;
-  firstName: string;
-  lastName: string;
   email: string;
+  firstName: string;
+  id: string;
+  lastName: string;
 }
 
 interface AuthResult {
@@ -35,66 +36,6 @@ export class AuthService {
     private jwtService: JwtService,
     private configService: ConfigService,
   ) {}
-
-  private hmacSecret(): string {
-    return this.configService.getOrThrow<string>('REFRESH_TOKEN_HMAC_SECRET');
-  }
-
-  private signAccessToken(userId: string, email: string): string {
-    return this.jwtService.sign(
-      { sub: userId, email },
-      {
-        secret: this.configService.getOrThrow<string>('JWT_ACCESS_SECRET'),
-        expiresIn: '15m',
-      },
-    );
-  }
-
-  private signRefreshToken(userId: string): string {
-    return this.jwtService.sign(
-      { sub: userId, jti: randomUUID() },
-      {
-        secret: this.configService.getOrThrow<string>('JWT_REFRESH_SECRET'),
-        expiresIn: '30d',
-      },
-    );
-  }
-
-  async register(dto: RegisterDto): Promise<AuthResult> {
-    const email = dto.email.toLowerCase().trim();
-
-    const existing = await this.usersService.findByEmail(email);
-    if (existing) {
-      throw new ConflictException('This email is already in use.');
-    }
-
-    const passwordHash = await bcrypt.hash(dto.password, 12);
-    const user = await this.usersService.create({
-      firstName: dto.firstName,
-      lastName: dto.lastName,
-      email,
-      passwordHash,
-    });
-
-    const accessToken = this.signAccessToken(user.id, user.email);
-    const refreshToken = this.signRefreshToken(user.id);
-
-    await this.usersService.updateRefreshTokenHash(
-      user.id,
-      hashToken(refreshToken, this.hmacSecret()),
-    );
-
-    return {
-      accessToken,
-      refreshToken,
-      user: {
-        id: user.id,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        email: user.email,
-      },
-    };
-  }
 
   async login(dto: LoginDto): Promise<AuthResult> {
     const email = dto.email.toLowerCase().trim();
@@ -121,12 +62,28 @@ export class AuthService {
       accessToken,
       refreshToken,
       user: {
-        id: user.id,
-        firstName: user.firstName,
-        lastName: user.lastName,
         email: user.email,
+        firstName: user.firstName,
+        id: user.id,
+        lastName: user.lastName,
       },
     };
+  }
+
+  async logout(token: string | undefined): Promise<void> {
+    if (!token) return;
+
+    try {
+      const payload = this.jwtService.verify<{ sub: string }>(token, {
+        secret: this.configService.getOrThrow<string>('JWT_REFRESH_SECRET'),
+      });
+      const user = await this.usersService.findById(payload.sub);
+      if (user) {
+        await this.usersService.updateRefreshTokenHash(user.id, null);
+      }
+    } catch (err) {
+      this.logger.warn('Logout cleanup failed', err);
+    }
   }
 
   async refresh(
@@ -136,7 +93,7 @@ export class AuthService {
       throw new UnauthorizedException();
     }
 
-    let payload: { sub: string; email: string };
+    let payload: { email: string; sub: string };
     try {
       payload = this.jwtService.verify(token, {
         secret: this.configService.getOrThrow<string>('JWT_REFRESH_SECRET'),
@@ -171,19 +128,63 @@ export class AuthService {
     return { accessToken, newRefreshToken };
   }
 
-  async logout(token: string | undefined): Promise<void> {
-    if (!token) return;
+  async register(dto: RegisterDto): Promise<AuthResult> {
+    const email = dto.email.toLowerCase().trim();
 
-    try {
-      const payload = this.jwtService.verify<{ sub: string }>(token, {
-        secret: this.configService.getOrThrow<string>('JWT_REFRESH_SECRET'),
-      });
-      const user = await this.usersService.findById(payload.sub);
-      if (user) {
-        await this.usersService.updateRefreshTokenHash(user.id, null);
-      }
-    } catch (err) {
-      this.logger.warn('Logout cleanup failed', err);
+    const existing = await this.usersService.findByEmail(email);
+    if (existing) {
+      throw new ConflictException('This email is already in use.');
     }
+
+    const passwordHash = await bcrypt.hash(dto.password, 12);
+    const user = await this.usersService.create({
+      email,
+      firstName: dto.firstName,
+      lastName: dto.lastName,
+      passwordHash,
+    });
+
+    const accessToken = this.signAccessToken(user.id, user.email);
+    const refreshToken = this.signRefreshToken(user.id);
+
+    await this.usersService.updateRefreshTokenHash(
+      user.id,
+      hashToken(refreshToken, this.hmacSecret()),
+    );
+
+    return {
+      accessToken,
+      refreshToken,
+      user: {
+        email: user.email,
+        firstName: user.firstName,
+        id: user.id,
+        lastName: user.lastName,
+      },
+    };
+  }
+
+  private hmacSecret(): string {
+    return this.configService.getOrThrow<string>('REFRESH_TOKEN_HMAC_SECRET');
+  }
+
+  private signAccessToken(userId: string, email: string): string {
+    return this.jwtService.sign(
+      { email, sub: userId },
+      {
+        expiresIn: '15m',
+        secret: this.configService.getOrThrow<string>('JWT_ACCESS_SECRET'),
+      },
+    );
+  }
+
+  private signRefreshToken(userId: string): string {
+    return this.jwtService.sign(
+      { jti: randomUUID(), sub: userId },
+      {
+        expiresIn: '30d',
+        secret: this.configService.getOrThrow<string>('JWT_REFRESH_SECRET'),
+      },
+    );
   }
 }

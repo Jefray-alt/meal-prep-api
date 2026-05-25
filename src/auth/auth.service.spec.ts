@@ -2,15 +2,16 @@ import { ConflictException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
+
 import { UsersService } from '../users/users.service';
-import { hashToken } from './token.utils';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
+import { hashToken } from './token.utils';
 
 jest.mock('bcrypt', () => ({
-  hash: jest.fn().mockResolvedValue('hashed'),
   compare: jest.fn(),
+  hash: jest.fn().mockResolvedValue('hashed'),
 }));
 
 import * as bcrypt from 'bcrypt';
@@ -20,20 +21,20 @@ const ACCESS_SECRET = 'access-secret';
 const REFRESH_SECRET = 'refresh-secret';
 
 const dto: RegisterDto = {
+  email: 'Jane@Example.com',
   firstName: 'Jane',
   lastName: 'Doe',
-  email: 'Jane@Example.com',
   password: 'supersecret123',
 };
 
 const savedUser = {
-  id: 'uuid-1',
-  firstName: 'Jane',
-  lastName: 'Doe',
-  email: 'jane@example.com',
-  passwordHash: 'hashed',
-  refreshTokenHash: null as string | null,
   createdAt: new Date(),
+  email: 'jane@example.com',
+  firstName: 'Jane',
+  id: 'uuid-1',
+  lastName: 'Doe',
+  passwordHash: 'hashed',
+  refreshTokenHash: null as null | string,
   updatedAt: new Date(),
 };
 
@@ -50,9 +51,9 @@ describe('AuthService', () => {
         {
           provide: UsersService,
           useValue: {
+            create: jest.fn(),
             findByEmail: jest.fn(),
             findById: jest.fn(),
-            create: jest.fn(),
             updateRefreshTokenHash: jest.fn(),
           },
         },
@@ -111,10 +112,10 @@ describe('AuthService', () => {
         accessToken: 'token',
         refreshToken: 'token',
         user: {
-          id: 'uuid-1',
-          firstName: 'Jane',
-          lastName: 'Doe',
           email: 'jane@example.com',
+          firstName: 'Jane',
+          id: 'uuid-1',
+          lastName: 'Doe',
         },
       });
     });
@@ -139,13 +140,13 @@ describe('AuthService', () => {
 
       expect(jwtService.sign).toHaveBeenNthCalledWith(
         1,
-        { sub: 'uuid-1', email: 'jane@example.com' },
-        { secret: ACCESS_SECRET, expiresIn: '15m' },
+        { email: 'jane@example.com', sub: 'uuid-1' },
+        { expiresIn: '15m', secret: ACCESS_SECRET },
       );
       expect(jwtService.sign).toHaveBeenNthCalledWith(
         2,
         { sub: 'uuid-1' },
-        { secret: REFRESH_SECRET, expiresIn: '30d' },
+        { expiresIn: '30d', secret: REFRESH_SECRET },
       );
     });
 
@@ -192,10 +193,10 @@ describe('AuthService', () => {
         accessToken: 'token',
         refreshToken: 'token',
         user: {
-          id: 'uuid-1',
-          firstName: 'Jane',
-          lastName: 'Doe',
           email: 'jane@example.com',
+          firstName: 'Jane',
+          id: 'uuid-1',
+          lastName: 'Doe',
         },
       });
     });
@@ -247,8 +248,8 @@ describe('AuthService', () => {
       const storedHash = hashToken(validToken, HMAC_SECRET);
       const userWithHash = { ...savedUser, refreshTokenHash: storedHash };
       jwtService.verify.mockReturnValue({
-        sub: 'uuid-1',
         email: 'jane@example.com',
+        sub: 'uuid-1',
       });
       usersService.findById.mockResolvedValue(userWithHash);
       jwtService.sign
@@ -299,8 +300,8 @@ describe('AuthService', () => {
         refreshTokenHash: hashToken('different.token', HMAC_SECRET),
       };
       jwtService.verify.mockReturnValue({
-        sub: 'uuid-1',
         email: 'jane@example.com',
+        sub: 'uuid-1',
       });
       usersService.findById.mockResolvedValue(userWithHash);
 

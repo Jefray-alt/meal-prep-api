@@ -2,14 +2,17 @@
 import eslint from '@eslint/js';
 import eslintPluginPrettierRecommended from 'eslint-plugin-prettier/recommended';
 import globals from 'globals';
+import { defineConfig } from 'eslint/config';
+import perfectionist from 'eslint-plugin-perfectionist';
 import tseslint from 'typescript-eslint';
 
-export default tseslint.config(
+export default defineConfig([
   {
     ignores: ['eslint.config.mjs'],
   },
+  perfectionist.configs['recommended-natural'],
   eslint.configs.recommended,
-  ...tseslint.configs.recommendedTypeChecked,
+  tseslint.configs.recommendedTypeChecked,
   eslintPluginPrettierRecommended,
   {
     languageOptions: {
@@ -39,4 +42,4 @@ export default tseslint.config(
       '@typescript-eslint/unbound-method': 'off',
     },
   },
-);
+]);

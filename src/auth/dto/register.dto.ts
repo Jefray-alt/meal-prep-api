@@ -7,18 +7,18 @@ import {
 } from 'class-validator';
 
 export class RegisterDto {
-  @IsString()
+  @IsEmail()
+  declare email: string;
+
   @IsNotEmpty()
+  @IsString()
   @MaxLength(100)
   declare firstName: string;
 
-  @IsString()
   @IsNotEmpty()
+  @IsString()
   @MaxLength(100)
   declare lastName: string;
-
-  @IsEmail()
-  declare email: string;
 
   @IsString()
   @MinLength(8)

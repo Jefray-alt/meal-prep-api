@@ -2,15 +2,16 @@ import { ConflictException, UnauthorizedException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { Request, Response } from 'express';
+
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 
 const dto: RegisterDto = {
+  email: 'jane@example.com',
   firstName: 'Jane',
   lastName: 'Doe',
-  email: 'jane@example.com',
   password: 'supersecret123',
 };
 
@@ -18,10 +19,10 @@ const serviceResult = {
   accessToken: 'access.token',
   refreshToken: 'refresh.token',
   user: {
-    id: 'uuid-1',
-    firstName: 'Jane',
-    lastName: 'Doe',
     email: 'jane@example.com',
+    firstName: 'Jane',
+    id: 'uuid-1',
+    lastName: 'Doe',
   },
 };
 
@@ -29,9 +30,9 @@ const serviceResult = {
 const EXPECTED_COOKIE_OPTIONS: jest.AsymmetricMatcher = expect.objectContaining(
   {
     httpOnly: true,
-    secure: true,
-    sameSite: 'strict',
     path: '/auth/refresh',
+    sameSite: 'strict',
+    secure: true,
   },
 );
 
@@ -40,24 +41,24 @@ describe('AuthController', () => {
   let authService: jest.Mocked<AuthService>;
 
   const resMock = {
-    cookie: jest.fn(),
     clearCookie: jest.fn(),
+    cookie: jest.fn(),
   } as unknown as Response;
   const reqMock = (cookies: Record<string, string> = {}) =>
     ({ cookies }) as unknown as Request;
 
   beforeEach(async () => {
     const module = await Test.createTestingModule({
-      imports: [ThrottlerModule.forRoot([{ ttl: 60_000, limit: 10 }])],
       controllers: [AuthController],
+      imports: [ThrottlerModule.forRoot([{ limit: 10, ttl: 60_000 }])],
       providers: [
         {
           provide: AuthService,
           useValue: {
-            register: jest.fn(),
             login: jest.fn(),
-            refresh: jest.fn(),
             logout: jest.fn(),
+            refresh: jest.fn(),
+            register: jest.fn(),
           },
         },
       ],

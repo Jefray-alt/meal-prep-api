@@ -1,4 +1,5 @@
 import { createHmac } from 'crypto';
+
 import { hashToken, safeCompareHex } from './token.utils';
 
 describe('hashToken', () => {

@@ -1,24 +1,25 @@
-import { getRepositoryToken } from '@nestjs/typeorm';
 import { Test } from '@nestjs/testing';
+import { getRepositoryToken } from '@nestjs/typeorm';
+
 import { User } from './user.entity';
 import { UsersService } from './users.service';
 
 const mockUser: User = {
-  id: 'uuid-1',
-  firstName: 'Jane',
-  lastName: 'Doe',
+  createdAt: new Date(),
   email: 'jane@example.com',
+  firstName: 'Jane',
+  id: 'uuid-1',
+  lastName: 'Doe',
   passwordHash: 'hashed',
   refreshTokenHash: null,
-  createdAt: new Date(),
   updatedAt: new Date(),
 };
 
 describe('UsersService', () => {
   let service: UsersService;
   const repoMock = {
-    findOne: jest.fn(),
     create: jest.fn(),
+    findOne: jest.fn(),
     save: jest.fn(),
     update: jest.fn(),
   };
@@ -58,16 +59,16 @@ describe('UsersService', () => {
       repoMock.save.mockResolvedValue(mockUser);
 
       const result = await service.create({
+        email: 'jane@example.com',
         firstName: 'Jane',
         lastName: 'Doe',
-        email: 'jane@example.com',
         passwordHash: 'hashed',
       });
 
       expect(repoMock.create).toHaveBeenCalledWith({
+        email: 'jane@example.com',
         firstName: 'Jane',
         lastName: 'Doe',
-        email: 'jane@example.com',
         passwordHash: 'hashed',
       });
       expect(repoMock.save).toHaveBeenCalledWith(mockUser);

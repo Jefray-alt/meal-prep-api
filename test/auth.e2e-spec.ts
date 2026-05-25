@@ -1,10 +1,11 @@
+import { faker } from '@faker-js/faker';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import { faker } from '@faker-js/faker';
 import cookieParser from 'cookie-parser';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { DataSource, In } from 'typeorm';
+
 import { AppModule } from '../src/app.module';
 import { User } from '../src/users/user.entity';
 
@@ -23,16 +24,16 @@ describe('Auth (e2e)', () => {
   let app: INestApplication<App>;
 
   const loginUser = {
+    email: faker.internet.email(),
     firstName: faker.person.firstName(),
     lastName: faker.person.lastName(),
-    email: faker.internet.email(),
     password: faker.internet.password({ length: 12 }),
   };
 
   const registerUser = {
+    email: faker.internet.email(),
     firstName: faker.person.firstName(),
     lastName: faker.person.lastName(),
-    email: faker.internet.email(),
     password: faker.internet.password({ length: 12 }),
   };
 
@@ -44,7 +45,7 @@ describe('Auth (e2e)', () => {
     app = module.createNestApplication();
     app.use(cookieParser());
     app.useGlobalPipes(
-      new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }),
+      new ValidationPipe({ forbidNonWhitelisted: true, whitelist: true }),
     );
     await app.init();
 
