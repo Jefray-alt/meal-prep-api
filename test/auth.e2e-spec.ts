@@ -1,9 +1,12 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { faker } from '@faker-js/faker';
 import cookieParser from 'cookie-parser';
 import request from 'supertest';
 import { App } from 'supertest/types';
+import { DataSource, In } from 'typeorm';
 import { AppModule } from '../src/app.module';
+import { User } from '../src/users/user.entity';
 
 function extractRefreshCookie(
   headers: Record<string, string | string[]>,
@@ -20,10 +23,17 @@ describe('Auth (e2e)', () => {
   let app: INestApplication<App>;
 
   const loginUser = {
-    firstName: 'Jane',
-    lastName: 'Doe',
-    email: 'jane.e2e.refresh@example.com',
-    password: 'supersecret123',
+    firstName: faker.person.firstName(),
+    lastName: faker.person.lastName(),
+    email: faker.internet.email(),
+    password: faker.internet.password({ length: 12 }),
+  };
+
+  const registerUser = {
+    firstName: faker.person.firstName(),
+    lastName: faker.person.lastName(),
+    email: faker.internet.email(),
+    password: faker.internet.password({ length: 12 }),
   };
 
   beforeAll(async () => {
@@ -42,6 +52,10 @@ describe('Auth (e2e)', () => {
   });
 
   afterAll(async () => {
+    const dataSource = app.get(DataSource);
+    await dataSource
+      .getRepository(User)
+      .delete({ email: In([loginUser.email, registerUser.email]) });
     await app.close();
   });
 
@@ -70,7 +84,7 @@ describe('Auth (e2e)', () => {
     it('401 on unknown email', () => {
       return request(app.getHttpServer())
         .post('/auth/login')
-        .send({ email: 'nobody@example.com', password: 'somepassword' })
+        .send({ email: faker.internet.email(), password: 'somepassword' })
         .expect(401);
     });
 
@@ -167,16 +181,11 @@ describe('Auth (e2e)', () => {
     });
   });
 
-  describe('POST /auth/register (existing, hash side-effect)', () => {
+  describe('POST /auth/register', () => {
     it('sets refresh_token cookie on successful registration', async () => {
       const res = await request(app.getHttpServer())
         .post('/auth/register')
-        .send({
-          firstName: 'New',
-          lastName: 'User',
-          email: `new.user.${Date.now()}@example.com`,
-          password: 'supersecret123',
-        })
+        .send(registerUser)
         .expect(201);
 
       expect(res.body).toHaveProperty('accessToken');
