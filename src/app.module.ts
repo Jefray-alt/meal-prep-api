@@ -6,6 +6,8 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
+import { MealPrepsModule } from './meal-preps/meal-preps.module';
+import { TagsModule } from './tags/tags.module';
 import { UsersModule } from './users/users.module';
 
 @Module({
@@ -29,6 +31,8 @@ import { UsersModule } from './users/users.module';
     ThrottlerModule.forRoot([{ limit: 10, ttl: 60_000 }]),
     UsersModule,
     AuthModule,
+    TagsModule,
+    MealPrepsModule,
   ],
   providers: [AppService],
 })
