@@ -2,6 +2,8 @@ import { ConflictException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
+import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
 
 import { UsersService } from '../users/users.service';
 import { AuthService } from './auth.service';
@@ -14,7 +16,18 @@ jest.mock('bcrypt', () => ({
   hash: jest.fn().mockResolvedValue('hashed'),
 }));
 
-import * as bcrypt from 'bcrypt';
+jest.mock('crypto', () => ({
+  randomUUID: jest.fn(),
+}));
+
+jest.mock('./token.utils', () => ({
+  hashToken: jest.fn().mockImplementation((token: string, secret: string) => {
+    return `hashed-${token}-with-${secret}`;
+  }),
+  safeCompareHex: jest.fn().mockImplementation((a: string, b: string) => {
+    return a === b;
+  }),
+}));
 
 const HMAC_SECRET = 'hmac-secret';
 const ACCESS_SECRET = 'access-secret';
@@ -135,6 +148,9 @@ describe('AuthService', () => {
     it('signs the access token with correct payload and options', async () => {
       usersService.findByEmail.mockResolvedValue(null);
       usersService.create.mockResolvedValue(savedUser);
+      const randomUUID = 'random-uuid';
+
+      (crypto.randomUUID as jest.Mock).mockReturnValue(randomUUID);
 
       await service.register(dto);
 
@@ -145,7 +161,7 @@ describe('AuthService', () => {
       );
       expect(jwtService.sign).toHaveBeenNthCalledWith(
         2,
-        { sub: 'uuid-1' },
+        { jti: randomUUID, sub: 'uuid-1' },
         { expiresIn: '30d', secret: REFRESH_SECRET },
       );
     });

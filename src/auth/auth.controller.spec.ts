@@ -30,9 +30,9 @@ const serviceResult = {
 const EXPECTED_COOKIE_OPTIONS: jest.AsymmetricMatcher = expect.objectContaining(
   {
     httpOnly: true,
-    path: '/auth/refresh',
+    path: '/api/auth/refresh',
     sameSite: 'strict',
-    secure: true,
+    secure: false,
   },
 );
 
