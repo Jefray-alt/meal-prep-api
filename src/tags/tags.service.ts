@@ -11,8 +11,30 @@ export class TagsService {
     private tagRepo: Repository<UserTag>,
   ) {}
 
-  findByUser(userId: string): Promise<UserTag[]> {
-    return this.tagRepo.find({ order: { name: 'ASC' }, where: { userId } });
+  async search(
+    userId: string,
+    search: string | undefined,
+    limit: number,
+    offset: number,
+  ): Promise<{ data: UserTag[]; hasMore: boolean }> {
+    const qb = this.tagRepo
+      .createQueryBuilder('tag')
+      .where('tag.userId = :userId', { userId })
+      .limit(limit + 1)
+      .offset(offset);
+
+    if (search?.trim()) {
+      qb.andWhere('tag.name ILIKE :search', { search: `%${search}%` }).orderBy(
+        'tag.name',
+        'ASC',
+      );
+    } else {
+      qb.orderBy('RANDOM()');
+    }
+
+    const rows = await qb.getMany();
+    const hasMore = rows.length > limit;
+    return { data: rows.slice(0, limit), hasMore };
   }
 
   async upsertForUser(userId: string, names: string[]): Promise<UserTag[]> {

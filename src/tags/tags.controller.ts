@@ -1,8 +1,9 @@
-import { Controller, Get, Req, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, Req, UseGuards } from '@nestjs/common';
 
 import type { AuthenticatedRequest } from '../types/authenticated-request';
 
 import { JwtAccessGuard } from '../auth/guards/jwt-access.guard';
+import { FindTagsQueryDto } from './dto/find-tags-query.dto';
 import { TagsService } from './tags.service';
 
 @Controller('tags')
@@ -11,7 +12,12 @@ export class TagsController {
   constructor(private tagsService: TagsService) {}
 
   @Get()
-  findAll(@Req() req: AuthenticatedRequest) {
-    return this.tagsService.findByUser(req.user.sub);
+  search(@Req() req: AuthenticatedRequest, @Query() query: FindTagsQueryDto) {
+    return this.tagsService.search(
+      req.user.sub,
+      query.search,
+      query.limit,
+      query.offset,
+    );
   }
 }
