@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 
@@ -145,6 +145,37 @@ describe('MealPrepsService', () => {
       expect(mealPrepRepo.create).toHaveBeenCalledWith(
         expect.objectContaining({ ingredients: baseDto.ingredients }),
       );
+    });
+  });
+
+  describe('findOne', () => {
+    it('returns full meal prep when id and userId match', async () => {
+      const mp = makeMealPrep({ tags: [makeTag('high-protein')] });
+      mealPrepRepo.findOne.mockResolvedValue(mp);
+
+      const result = await service.findOne(USER_ID, 'mp-uuid-1');
+
+      expect(mealPrepRepo.findOne).toHaveBeenCalledWith({
+        relations: { tags: true },
+        where: { id: 'mp-uuid-1', userId: USER_ID },
+      });
+      expect(result).toEqual(mp);
+    });
+
+    it('throws NotFoundException when id belongs to a different user', async () => {
+      mealPrepRepo.findOne.mockResolvedValue(null);
+
+      await expect(service.findOne('other-user', 'mp-uuid-1')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('throws NotFoundException when id does not exist', async () => {
+      mealPrepRepo.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.findOne(USER_ID, 'non-existent-uuid'),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 

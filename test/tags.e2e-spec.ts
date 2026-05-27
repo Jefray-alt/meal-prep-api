@@ -51,7 +51,7 @@ describe('Tags (e2e)', () => {
         .set('Authorization', `Bearer ${accessToken}`)
         .expect(200);
 
-      expect(res.body).toEqual([]);
+      expect(res.body).toEqual({ data: [], hasMore: false });
     });
 
     it('401 when no token is provided', () => {

@@ -4,6 +4,8 @@ import { In, Repository } from 'typeorm';
 
 import { UserTag } from './user-tag.entity';
 
+export type TagSearchResult = { data: UserTag[]; hasMore: boolean };
+
 @Injectable()
 export class TagsService {
   constructor(
@@ -16,7 +18,7 @@ export class TagsService {
     search: string | undefined,
     limit: number,
     offset: number,
-  ): Promise<{ data: UserTag[]; hasMore: boolean }> {
+  ): Promise<TagSearchResult> {
     const qb = this.tagRepo
       .createQueryBuilder('tag')
       .where('tag.userId = :userId', { userId })

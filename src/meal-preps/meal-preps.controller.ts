@@ -4,6 +4,7 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Param,
   Post,
   Query,
   Req,
@@ -34,5 +35,10 @@ export class MealPrepsController {
     @Req() req: AuthenticatedRequest,
   ) {
     return this.mealPrepsService.findByUser(req.user.sub, query);
+  }
+
+  @Get(':id')
+  findOne(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    return this.mealPrepsService.findOne(req.user.sub, id);
   }
 }

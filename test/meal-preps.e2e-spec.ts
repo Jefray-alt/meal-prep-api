@@ -7,6 +7,8 @@ import { App } from 'supertest/types';
 import { DataSource, In } from 'typeorm';
 
 import { AppModule } from '../src/app.module';
+import { MealPrep } from '../src/meal-preps/meal-prep.entity';
+import { TagSearchResult } from '../src/tags/tags.service';
 import { User } from '../src/users/user.entity';
 
 const validPayload = {
@@ -22,8 +24,16 @@ const validPayload = {
 describe('MealPreps (e2e)', () => {
   let app: INestApplication<App>;
   let accessToken: string;
+  let otherAccessToken: string;
 
   const user = {
+    email: faker.internet.email(),
+    firstName: faker.person.firstName(),
+    lastName: faker.person.lastName(),
+    password: faker.internet.password({ length: 12 }),
+  };
+
+  const otherUser = {
     email: faker.internet.email(),
     firstName: faker.person.firstName(),
     lastName: faker.person.lastName(),
@@ -46,12 +56,72 @@ describe('MealPreps (e2e)', () => {
       .post('/auth/register')
       .send(user);
     accessToken = (res.body as { accessToken: string }).accessToken;
+
+    const otherRes = await request(app.getHttpServer())
+      .post('/auth/register')
+      .send(otherUser);
+    otherAccessToken = (otherRes.body as { accessToken: string }).accessToken;
   });
 
   afterAll(async () => {
     const dataSource = app.get(DataSource);
-    await dataSource.getRepository(User).delete({ email: In([user.email]) });
+    await dataSource
+      .getRepository(MealPrep)
+      .delete({ userId: In([user.email, otherUser.email]) });
+    await dataSource
+      .getRepository(User)
+      .delete({ email: In([user.email, otherUser.email]) });
     await app.close();
+  });
+
+  describe('GET /meal-preps/:id', () => {
+    let mealPrepId: string;
+
+    beforeAll(async () => {
+      const res = await request(app.getHttpServer())
+        .post('/meal-preps')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send(validPayload)
+        .expect(201);
+      mealPrepId = (res.body as { id: string }).id;
+    });
+
+    it('200 with full detail for authenticated owner', async () => {
+      const res = await request(app.getHttpServer())
+        .get(`/meal-preps/${mealPrepId}`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .expect(200);
+
+      expect(res.body).toMatchObject({
+        id: mealPrepId,
+        ingredients: validPayload.ingredients,
+        instructions: validPayload.instructions,
+        title: validPayload.title,
+      });
+      expect(Array.isArray((res.body as { tags: unknown[] }).tags)).toBe(true);
+      expect(res.body).toHaveProperty('createdAt');
+      expect(res.body).toHaveProperty('updatedAt');
+    });
+
+    it("404 when authenticated user requests another user's meal prep", () => {
+      return request(app.getHttpServer())
+        .get(`/meal-preps/${mealPrepId}`)
+        .set('Authorization', `Bearer ${otherAccessToken}`)
+        .expect(404);
+    });
+
+    it('401 when no token is provided', () => {
+      return request(app.getHttpServer())
+        .get(`/meal-preps/${mealPrepId}`)
+        .expect(401);
+    });
+
+    it('404 for an unknown UUID', () => {
+      return request(app.getHttpServer())
+        .get('/meal-preps/00000000-0000-0000-0000-000000000000')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .expect(404);
+    });
   });
 
   describe('POST /meal-preps', () => {
@@ -104,8 +174,8 @@ describe('MealPreps (e2e)', () => {
         .set('Authorization', `Bearer ${accessToken}`)
         .expect(200);
 
-      const tagList = tagsRes.body as { name: string }[];
-      const count = tagList.filter((t) => t.name === sharedTag).length;
+      const tagList = tagsRes.body as TagSearchResult;
+      const count = tagList.data.filter((t) => t.name === sharedTag).length;
       expect(count).toBe(1);
     });
 

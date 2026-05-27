@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { LessThan, Repository } from 'typeorm';
 
@@ -61,5 +65,14 @@ export class MealPrepsService {
     const nextCursor = data.length === limit ? data[data.length - 1].id : null;
 
     return { data, nextCursor };
+  }
+
+  async findOne(userId: string, id: string): Promise<MealPrep> {
+    const mealPrep = await this.mealPrepRepo.findOne({
+      relations: { tags: true },
+      where: { id, userId },
+    });
+    if (!mealPrep) throw new NotFoundException();
+    return mealPrep;
   }
 }
