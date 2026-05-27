@@ -1,9 +1,11 @@
+import { BadRequestException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 
 import { TagsService } from '../tags/tags.service';
 import { UserTag } from '../tags/user-tag.entity';
 import { CreateMealPrepDto } from './dto/create-meal-prep.dto';
+import { ListMealPrepsQueryDto } from './dto/list-meal-preps-query.dto';
 import { MealPrep } from './meal-prep.entity';
 import { MealPrepsService } from './meal-preps.service';
 
@@ -22,13 +24,38 @@ const baseDto: CreateMealPrepDto = {
   title: 'Sunday Batch',
 };
 
+const makeMealPrep = (overrides: Partial<MealPrep> = {}): MealPrep => ({
+  carbs: null,
+  createdAt: new Date('2024-01-15T12:00:00Z'),
+  fat: null,
+  id: 'mp-uuid-1',
+  ingredients: [{ name: 'chicken', quantity: '200g' }],
+  instructions: 'Cook it.',
+  protein: null,
+  tags: [],
+  title: 'Sunday Batch',
+  updatedAt: new Date('2024-01-15T12:00:00Z'),
+  userId: USER_ID,
+  ...overrides,
+});
+
 describe('MealPrepsService', () => {
   let service: MealPrepsService;
-  let mealPrepRepo: { create: jest.Mock; save: jest.Mock };
+  let mealPrepRepo: {
+    create: jest.Mock;
+    find: jest.Mock;
+    findOne: jest.Mock;
+    save: jest.Mock;
+  };
   let tagsService: jest.Mocked<TagsService>;
 
   beforeEach(async () => {
-    mealPrepRepo = { create: jest.fn(), save: jest.fn() };
+    mealPrepRepo = {
+      create: jest.fn(),
+      find: jest.fn(),
+      findOne: jest.fn(),
+      save: jest.fn(),
+    };
     tagsService = {
       findByUser: jest.fn(),
       upsertForUser: jest.fn(),
@@ -117,6 +144,87 @@ describe('MealPrepsService', () => {
 
       expect(mealPrepRepo.create).toHaveBeenCalledWith(
         expect.objectContaining({ ingredients: baseDto.ingredients }),
+      );
+    });
+  });
+
+  describe('findByUser', () => {
+    const query = (
+      overrides: Partial<ListMealPrepsQueryDto> = {},
+    ): ListMealPrepsQueryDto => ({ limit: 20, ...overrides });
+
+    it('returns first page with nextCursor when a full page is returned', async () => {
+      const preps = Array.from({ length: 20 }, (_, i) =>
+        makeMealPrep({ id: `mp-${i.toString()}` }),
+      );
+      mealPrepRepo.find.mockResolvedValue(preps);
+
+      const result = await service.findByUser(USER_ID, query());
+
+      expect(result.data).toHaveLength(20);
+      expect(result.nextCursor).toBe('mp-19');
+    });
+
+    it('returns nextCursor: null when fewer items than limit are returned', async () => {
+      mealPrepRepo.find.mockResolvedValue([
+        makeMealPrep(),
+        makeMealPrep({ id: 'mp-2' }),
+      ]);
+
+      const result = await service.findByUser(USER_ID, query());
+
+      expect(result.nextCursor).toBeNull();
+    });
+
+    it('returns empty data and nextCursor: null when user has no meal preps', async () => {
+      mealPrepRepo.find.mockResolvedValue([]);
+
+      const result = await service.findByUser(USER_ID, query());
+
+      expect(result).toEqual({ data: [], nextCursor: null });
+    });
+
+    it('looks up cursor record and filters by its createdAt', async () => {
+      const cursorDate = new Date('2024-01-10T00:00:00Z');
+      mealPrepRepo.findOne.mockResolvedValue({ createdAt: cursorDate });
+      mealPrepRepo.find.mockResolvedValue([makeMealPrep()]);
+
+      await service.findByUser(USER_ID, query({ cursor: 'cursor-uuid' }));
+
+      expect(mealPrepRepo.findOne).toHaveBeenCalledWith({
+        select: { createdAt: true },
+        where: { id: 'cursor-uuid', userId: USER_ID },
+      });
+      expect(mealPrepRepo.find).toHaveBeenCalledWith(
+        expect.objectContaining({ take: 20 }),
+      );
+    });
+
+    it('throws BadRequestException when cursor does not exist or belongs to another user', async () => {
+      mealPrepRepo.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.findByUser(USER_ID, query({ cursor: 'bad-cursor-uuid' })),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('defaults limit to 20 when not provided', async () => {
+      mealPrepRepo.find.mockResolvedValue([]);
+
+      await service.findByUser(USER_ID, {});
+
+      expect(mealPrepRepo.find).toHaveBeenCalledWith(
+        expect.objectContaining({ take: 20 }),
+      );
+    });
+
+    it('uses the provided limit', async () => {
+      mealPrepRepo.find.mockResolvedValue([]);
+
+      await service.findByUser(USER_ID, query({ limit: 5 }));
+
+      expect(mealPrepRepo.find).toHaveBeenCalledWith(
+        expect.objectContaining({ take: 5 }),
       );
     });
   });
