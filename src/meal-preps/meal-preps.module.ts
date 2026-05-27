@@ -3,13 +3,18 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { AuthModule } from '../auth/auth.module';
 import { TagsModule } from '../tags/tags.module';
+import { UserTag } from '../tags/user-tag.entity';
 import { MealPrep } from './meal-prep.entity';
 import { MealPrepsController } from './meal-preps.controller';
 import { MealPrepsService } from './meal-preps.service';
 
 @Module({
   controllers: [MealPrepsController],
-  imports: [AuthModule, TagsModule, TypeOrmModule.forFeature([MealPrep])],
+  imports: [
+    AuthModule,
+    TagsModule,
+    TypeOrmModule.forFeature([MealPrep, UserTag]),
+  ],
   providers: [MealPrepsService],
 })
 export class MealPrepsModule {}

@@ -7,6 +7,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { LessThan, Repository } from 'typeorm';
 
 import { TagsService } from '../tags/tags.service';
+import { UserTag } from '../tags/user-tag.entity';
 import { CreateMealPrepDto } from './dto/create-meal-prep.dto';
 import { ListMealPrepsQueryDto } from './dto/list-meal-preps-query.dto';
 import { MealPrepListItemDto } from './dto/meal-prep-list-item.dto';
@@ -17,6 +18,8 @@ export class MealPrepsService {
   constructor(
     @InjectRepository(MealPrep)
     private mealPrepRepo: Repository<MealPrep>,
+    @InjectRepository(UserTag)
+    private tagRepo: Repository<UserTag>,
     private tagsService: TagsService,
   ) {}
 
@@ -90,5 +93,30 @@ export class MealPrepsService {
     });
     if (!mealPrep) throw new NotFoundException();
     return mealPrep;
+  }
+
+  async remove(userId: string, id: string): Promise<void> {
+    const mealPrep = await this.mealPrepRepo.findOne({
+      relations: { tags: true },
+      where: { id, userId },
+    });
+    if (!mealPrep) throw new NotFoundException();
+
+    const tagIds = mealPrep.tags.map((t) => t.id);
+
+    mealPrep.tags = [];
+    await this.mealPrepRepo.save(mealPrep);
+    await this.mealPrepRepo.remove(mealPrep);
+
+    for (const tagId of tagIds) {
+      const count = await this.mealPrepRepo
+        .createQueryBuilder('mp')
+        .innerJoin('mp.tags', 'tag')
+        .where('tag.id = :tagId', { tagId })
+        .getCount();
+      if (count === 0) {
+        await this.tagRepo.delete(tagId);
+      }
+    }
   }
 }

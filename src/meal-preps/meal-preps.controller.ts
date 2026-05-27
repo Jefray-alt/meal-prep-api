@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -40,5 +41,11 @@ export class MealPrepsController {
   @Get(':id')
   findOne(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
     return this.mealPrepsService.findOne(req.user.sub, id);
+  }
+
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  remove(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    return this.mealPrepsService.remove(req.user.sub, id);
   }
 }

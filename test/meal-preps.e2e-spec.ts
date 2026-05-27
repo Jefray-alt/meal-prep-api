@@ -9,6 +9,7 @@ import { DataSource, In } from 'typeorm';
 import { AppModule } from '../src/app.module';
 import { MealPrep } from '../src/meal-preps/meal-prep.entity';
 import { TagSearchResult } from '../src/tags/tags.service';
+import { UserTag } from '../src/tags/user-tag.entity';
 import { User } from '../src/users/user.entity';
 
 const validPayload = {
@@ -121,6 +122,107 @@ describe('MealPreps (e2e)', () => {
         .get('/meal-preps/00000000-0000-0000-0000-000000000000')
         .set('Authorization', `Bearer ${accessToken}`)
         .expect(404);
+    });
+  });
+
+  describe('DELETE /meal-preps/:id', () => {
+    let mealPrepId: string;
+
+    beforeAll(async () => {
+      const res = await request(app.getHttpServer())
+        .post('/meal-preps')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send(validPayload)
+        .expect(201);
+      mealPrepId = (res.body as { id: string }).id;
+    });
+
+    it('204 and meal prep is gone on subsequent GET', async () => {
+      const createRes = await request(app.getHttpServer())
+        .post('/meal-preps')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send(validPayload)
+        .expect(201);
+      const id = (createRes.body as { id: string }).id;
+
+      await request(app.getHttpServer())
+        .delete(`/meal-preps/${id}`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .expect(204);
+
+      await request(app.getHttpServer())
+        .get(`/meal-preps/${id}`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .expect(404);
+    });
+
+    it('401 when no token is provided', () => {
+      return request(app.getHttpServer())
+        .delete(`/meal-preps/${mealPrepId}`)
+        .expect(401);
+    });
+
+    it('404 for a non-existent id', () => {
+      return request(app.getHttpServer())
+        .delete('/meal-preps/00000000-0000-0000-0000-000000000000')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .expect(404);
+    });
+
+    it('404 when id belongs to another user', () => {
+      return request(app.getHttpServer())
+        .delete(`/meal-preps/${mealPrepId}`)
+        .set('Authorization', `Bearer ${otherAccessToken}`)
+        .expect(404);
+    });
+
+    it('204 and orphaned tag is deleted', async () => {
+      const exclusiveTag = `exclusive-${faker.string.alphanumeric(8)}`;
+      const createRes = await request(app.getHttpServer())
+        .post('/meal-preps')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ ...validPayload, tags: [exclusiveTag] })
+        .expect(201);
+      const id = (createRes.body as { id: string }).id;
+
+      await request(app.getHttpServer())
+        .delete(`/meal-preps/${id}`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .expect(204);
+
+      const dataSource = app.get(DataSource);
+      const tag = await dataSource
+        .getRepository(UserTag)
+        .findOne({ where: { name: exclusiveTag } });
+      expect(tag).toBeNull();
+    });
+
+    it('204 and shared tag is preserved', async () => {
+      const sharedTag = `shared-${faker.string.alphanumeric(8)}`;
+
+      const createRes = await request(app.getHttpServer())
+        .post('/meal-preps')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ ...validPayload, tags: [sharedTag] })
+        .expect(201);
+      const idToDelete = (createRes.body as { id: string }).id;
+
+      await request(app.getHttpServer())
+        .post('/meal-preps')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ ...validPayload, tags: [sharedTag] })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .delete(`/meal-preps/${idToDelete}`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .expect(204);
+
+      const dataSource = app.get(DataSource);
+      const tag = await dataSource
+        .getRepository(UserTag)
+        .findOne({ where: { name: sharedTag } });
+      expect(tag).not.toBeNull();
     });
   });
 

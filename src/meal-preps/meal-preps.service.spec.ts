@@ -44,23 +44,35 @@ const makeMealPrep = (overrides: Partial<MealPrep> = {}): MealPrep => ({
   ...overrides,
 });
 
+const makeQb = (count: number) => ({
+  getCount: jest.fn().mockResolvedValue(count),
+  innerJoin: jest.fn().mockReturnThis(),
+  where: jest.fn().mockReturnThis(),
+});
+
 describe('MealPrepsService', () => {
   let service: MealPrepsService;
   let mealPrepRepo: {
     create: jest.Mock;
+    createQueryBuilder: jest.Mock;
     find: jest.Mock;
     findOne: jest.Mock;
+    remove: jest.Mock;
     save: jest.Mock;
   };
+  let tagRepo: { delete: jest.Mock };
   let tagsService: jest.Mocked<TagsService>;
 
   beforeEach(async () => {
     mealPrepRepo = {
       create: jest.fn(),
+      createQueryBuilder: jest.fn(),
       find: jest.fn(),
       findOne: jest.fn(),
+      remove: jest.fn(),
       save: jest.fn(),
     };
+    tagRepo = { delete: jest.fn() };
     tagsService = {
       findByUser: jest.fn(),
       upsertForUser: jest.fn(),
@@ -70,6 +82,7 @@ describe('MealPrepsService', () => {
       providers: [
         MealPrepsService,
         { provide: getRepositoryToken(MealPrep), useValue: mealPrepRepo },
+        { provide: getRepositoryToken(UserTag), useValue: tagRepo },
         { provide: TagsService, useValue: tagsService },
       ],
     }).compile();
@@ -310,6 +323,91 @@ describe('MealPrepsService', () => {
       expect(item).not.toHaveProperty('updatedAt');
       expect(item).not.toHaveProperty('userId');
       expect(item).not.toHaveProperty('ingredients');
+    });
+  });
+
+  describe('remove', () => {
+    it('throws NotFoundException when meal prep does not exist', async () => {
+      mealPrepRepo.findOne.mockResolvedValue(null);
+
+      await expect(service.remove(USER_ID, 'mp-uuid-1')).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(mealPrepRepo.save).not.toHaveBeenCalled();
+      expect(mealPrepRepo.remove).not.toHaveBeenCalled();
+    });
+
+    it('throws NotFoundException when meal prep belongs to a different user', async () => {
+      mealPrepRepo.findOne.mockResolvedValue(null);
+
+      await expect(service.remove('other-user', 'mp-uuid-1')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('deletes meal prep with no tags without attempting tag deletion', async () => {
+      const mp = makeMealPrep({ tags: [] });
+      mealPrepRepo.findOne.mockResolvedValue(mp);
+      mealPrepRepo.save.mockResolvedValue(mp);
+      mealPrepRepo.remove.mockResolvedValue(mp);
+
+      await service.remove(USER_ID, mp.id);
+
+      expect(mealPrepRepo.save).toHaveBeenCalled();
+      expect(mealPrepRepo.remove).toHaveBeenCalledWith(mp);
+      expect(mealPrepRepo.createQueryBuilder).not.toHaveBeenCalled();
+      expect(tagRepo.delete).not.toHaveBeenCalled();
+    });
+
+    it('keeps tags that are still used by other meal preps', async () => {
+      const tagA = makeTag('high-protein');
+      const tagB = makeTag('bulk');
+      const mp = makeMealPrep({ tags: [tagA, tagB] });
+      mealPrepRepo.findOne.mockResolvedValue(mp);
+      mealPrepRepo.save.mockResolvedValue(mp);
+      mealPrepRepo.remove.mockResolvedValue(mp);
+      mealPrepRepo.createQueryBuilder
+        .mockReturnValueOnce(makeQb(1))
+        .mockReturnValueOnce(makeQb(2));
+
+      await service.remove(USER_ID, mp.id);
+
+      expect(tagRepo.delete).not.toHaveBeenCalled();
+    });
+
+    it('deletes only the orphaned tags when some are still shared', async () => {
+      const orphan = makeTag('orphan');
+      const shared = makeTag('shared');
+      const mp = makeMealPrep({ tags: [orphan, shared] });
+      mealPrepRepo.findOne.mockResolvedValue(mp);
+      mealPrepRepo.save.mockResolvedValue(mp);
+      mealPrepRepo.remove.mockResolvedValue(mp);
+      mealPrepRepo.createQueryBuilder
+        .mockReturnValueOnce(makeQb(0))
+        .mockReturnValueOnce(makeQb(1));
+
+      await service.remove(USER_ID, mp.id);
+
+      expect(tagRepo.delete).toHaveBeenCalledTimes(1);
+      expect(tagRepo.delete).toHaveBeenCalledWith(orphan.id);
+    });
+
+    it('deletes all tags when every tag is orphaned after deletion', async () => {
+      const tagA = makeTag('tag-a');
+      const tagB = makeTag('tag-b');
+      const mp = makeMealPrep({ tags: [tagA, tagB] });
+      mealPrepRepo.findOne.mockResolvedValue(mp);
+      mealPrepRepo.save.mockResolvedValue(mp);
+      mealPrepRepo.remove.mockResolvedValue(mp);
+      mealPrepRepo.createQueryBuilder
+        .mockReturnValueOnce(makeQb(0))
+        .mockReturnValueOnce(makeQb(0));
+
+      await service.remove(USER_ID, mp.id);
+
+      expect(tagRepo.delete).toHaveBeenCalledTimes(2);
+      expect(tagRepo.delete).toHaveBeenCalledWith(tagA.id);
+      expect(tagRepo.delete).toHaveBeenCalledWith(tagB.id);
     });
   });
 });
