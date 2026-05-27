@@ -9,6 +9,7 @@ import { LessThan, Repository } from 'typeorm';
 import { TagsService } from '../tags/tags.service';
 import { CreateMealPrepDto } from './dto/create-meal-prep.dto';
 import { ListMealPrepsQueryDto } from './dto/list-meal-preps-query.dto';
+import { MealPrepListItemDto } from './dto/meal-prep-list-item.dto';
 import { MealPrep } from './meal-prep.entity';
 
 @Injectable()
@@ -39,7 +40,7 @@ export class MealPrepsService {
   async findByUser(
     userId: string,
     query: ListMealPrepsQueryDto,
-  ): Promise<{ data: MealPrep[]; nextCursor: null | string }> {
+  ): Promise<{ data: MealPrepListItemDto[]; nextCursor: null | string }> {
     const limit = query.limit ?? 20;
 
     let cursorCreatedAt: Date | undefined;
@@ -52,7 +53,7 @@ export class MealPrepsService {
       cursorCreatedAt = cursorRecord.createdAt;
     }
 
-    const data = await this.mealPrepRepo.find({
+    const raw = await this.mealPrepRepo.find({
       order: { createdAt: 'DESC' },
       relations: { tags: true },
       take: limit,
@@ -62,7 +63,22 @@ export class MealPrepsService {
       },
     });
 
-    const nextCursor = data.length === limit ? data[data.length - 1].id : null;
+    const nextCursor = raw.length === limit ? raw[raw.length - 1].id : null;
+
+    const data: MealPrepListItemDto[] = raw.map((mp) => {
+      const sorted = [...mp.tags].sort(
+        (a, b) => a.createdAt.getTime() - b.createdAt.getTime(),
+      );
+      return {
+        carbs: mp.carbs,
+        fat: mp.fat,
+        firstTag: sorted[0] ? { id: sorted[0].id, name: sorted[0].name } : null,
+        id: mp.id,
+        protein: mp.protein,
+        tagCount: mp.tags.length,
+        title: mp.title,
+      };
+    });
 
     return { data, nextCursor };
   }

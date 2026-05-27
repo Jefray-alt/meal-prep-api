@@ -11,8 +11,13 @@ import { MealPrepsService } from './meal-preps.service';
 
 const USER_ID = 'user-uuid-1';
 
-const makeTag = (name: string): UserTag =>
-  ({ id: `tag-${name}`, name, userId: USER_ID }) as UserTag;
+const makeTag = (name: string, createdAt?: Date): UserTag =>
+  ({
+    createdAt: createdAt ?? new Date('2024-01-01T00:00:00Z'),
+    id: `tag-${name}`,
+    name,
+    userId: USER_ID,
+  }) as UserTag;
 
 const baseDto: CreateMealPrepDto = {
   carbs: 50,
@@ -75,7 +80,7 @@ describe('MealPrepsService', () => {
 
   describe('create', () => {
     it('upserts tags then saves a new meal prep with the resolved tags', async () => {
-      const tags = baseDto.tags.map(makeTag);
+      const tags = baseDto.tags.map((name) => makeTag(name));
       const savedMealPrep = {
         ...baseDto,
         id: 'mp-uuid-1',
@@ -257,6 +262,54 @@ describe('MealPrepsService', () => {
       expect(mealPrepRepo.find).toHaveBeenCalledWith(
         expect.objectContaining({ take: 5 }),
       );
+    });
+
+    it('sets firstTag to the earliest-createdAt tag and tagCount to total when multiple tags', async () => {
+      const older = makeTag('high-protein', new Date('2024-01-01T00:00:00Z'));
+      const newer = makeTag('bulk', new Date('2024-06-01T00:00:00Z'));
+      mealPrepRepo.find.mockResolvedValue([
+        makeMealPrep({ tags: [newer, older] }),
+      ]);
+
+      const result = await service.findByUser(USER_ID, query());
+
+      expect(result.data[0].firstTag).toEqual({
+        id: older.id,
+        name: older.name,
+      });
+      expect(result.data[0].tagCount).toBe(2);
+    });
+
+    it('sets firstTag and tagCount to 1 when meal prep has exactly one tag', async () => {
+      const tag = makeTag('bulk');
+      mealPrepRepo.find.mockResolvedValue([makeMealPrep({ tags: [tag] })]);
+
+      const result = await service.findByUser(USER_ID, query());
+
+      expect(result.data[0].firstTag).toEqual({ id: tag.id, name: tag.name });
+      expect(result.data[0].tagCount).toBe(1);
+    });
+
+    it('sets firstTag to null and tagCount to 0 when meal prep has no tags', async () => {
+      mealPrepRepo.find.mockResolvedValue([makeMealPrep({ tags: [] })]);
+
+      const result = await service.findByUser(USER_ID, query());
+
+      expect(result.data[0].firstTag).toBeNull();
+      expect(result.data[0].tagCount).toBe(0);
+    });
+
+    it('omits instructions, createdAt, updatedAt, userId, and ingredients from list items', async () => {
+      mealPrepRepo.find.mockResolvedValue([makeMealPrep()]);
+
+      const result = await service.findByUser(USER_ID, query());
+      const item = result.data[0] as unknown as Record<string, unknown>;
+
+      expect(item).not.toHaveProperty('instructions');
+      expect(item).not.toHaveProperty('createdAt');
+      expect(item).not.toHaveProperty('updatedAt');
+      expect(item).not.toHaveProperty('userId');
+      expect(item).not.toHaveProperty('ingredients');
     });
   });
 });
