@@ -11,6 +11,7 @@ import { UserTag } from '../tags/user-tag.entity';
 import { CreateMealPrepDto } from './dto/create-meal-prep.dto';
 import { ListMealPrepsQueryDto } from './dto/list-meal-preps-query.dto';
 import { MealPrepListItemDto } from './dto/meal-prep-list-item.dto';
+import { UpdateMealPrepDto } from './dto/update-meal-prep.dto';
 import { MealPrep } from './meal-prep.entity';
 
 @Injectable()
@@ -118,5 +119,31 @@ export class MealPrepsService {
         await this.tagRepo.delete(tagId);
       }
     }
+  }
+
+  async update(
+    userId: string,
+    id: string,
+    dto: UpdateMealPrepDto,
+  ): Promise<MealPrep> {
+    const mealPrep = await this.mealPrepRepo.findOne({
+      relations: { tags: true },
+      where: { id, userId },
+    });
+    if (!mealPrep) throw new NotFoundException();
+
+    if (dto.tags !== undefined) {
+      mealPrep.tags = await this.tagsService.upsertForUser(userId, dto.tags);
+    }
+
+    if (dto.title !== undefined) mealPrep.title = dto.title;
+    if (dto.instructions !== undefined)
+      mealPrep.instructions = dto.instructions;
+    if (dto.ingredients !== undefined) mealPrep.ingredients = dto.ingredients;
+    if (dto.protein !== undefined) mealPrep.protein = dto.protein;
+    if (dto.carbs !== undefined) mealPrep.carbs = dto.carbs;
+    if (dto.fat !== undefined) mealPrep.fat = dto.fat;
+
+    return this.mealPrepRepo.save(mealPrep);
   }
 }

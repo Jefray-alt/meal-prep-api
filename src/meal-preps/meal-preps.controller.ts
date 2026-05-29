@@ -6,6 +6,7 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  Patch,
   Post,
   Query,
   Req,
@@ -17,6 +18,7 @@ import type { AuthenticatedRequest } from '../types/authenticated-request';
 import { JwtAccessGuard } from '../auth/guards/jwt-access.guard';
 import { CreateMealPrepDto } from './dto/create-meal-prep.dto';
 import { ListMealPrepsQueryDto } from './dto/list-meal-preps-query.dto';
+import { UpdateMealPrepDto } from './dto/update-meal-prep.dto';
 import { MealPrepsService } from './meal-preps.service';
 
 @Controller('meal-preps')
@@ -47,5 +49,14 @@ export class MealPrepsController {
   @HttpCode(HttpStatus.NO_CONTENT)
   remove(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
     return this.mealPrepsService.remove(req.user.sub, id);
+  }
+
+  @Patch(':id')
+  update(
+    @Param('id') id: string,
+    @Body() dto: UpdateMealPrepDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.mealPrepsService.update(req.user.sub, id, dto);
   }
 }

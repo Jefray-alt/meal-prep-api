@@ -6,6 +6,7 @@ import { TagsService } from '../tags/tags.service';
 import { UserTag } from '../tags/user-tag.entity';
 import { CreateMealPrepDto } from './dto/create-meal-prep.dto';
 import { ListMealPrepsQueryDto } from './dto/list-meal-preps-query.dto';
+import { UpdateMealPrepDto } from './dto/update-meal-prep.dto';
 import { MealPrep } from './meal-prep.entity';
 import { MealPrepsService } from './meal-preps.service';
 
@@ -323,6 +324,106 @@ describe('MealPrepsService', () => {
       expect(item).not.toHaveProperty('updatedAt');
       expect(item).not.toHaveProperty('userId');
       expect(item).not.toHaveProperty('ingredients');
+    });
+  });
+
+  describe('update', () => {
+    it('updates only the provided scalar fields and leaves others unchanged', async () => {
+      const existing = makeMealPrep({ protein: 10, title: 'Old Title' });
+      const saved = { ...existing, title: 'New Title' };
+      mealPrepRepo.findOne.mockResolvedValue(existing);
+      mealPrepRepo.save.mockResolvedValue(saved);
+
+      const dto: UpdateMealPrepDto = { title: 'New Title' };
+      const result = await service.update(USER_ID, existing.id, dto);
+
+      expect(mealPrepRepo.findOne).toHaveBeenCalledWith({
+        relations: { tags: true },
+        where: { id: existing.id, userId: USER_ID },
+      });
+      expect(tagsService.upsertForUser).not.toHaveBeenCalled();
+      expect(mealPrepRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({ protein: 10, title: 'New Title' }),
+      );
+      expect(result).toEqual(saved);
+    });
+
+    it('upserts and replaces tags when tags field is provided', async () => {
+      const existing = makeMealPrep({ tags: [makeTag('old')] });
+      const newTags = [makeTag('new-tag')];
+      mealPrepRepo.findOne.mockResolvedValue(existing);
+      mealPrepRepo.save.mockResolvedValue({ ...existing, tags: newTags });
+      tagsService.upsertForUser.mockResolvedValue(newTags);
+
+      const dto: UpdateMealPrepDto = { tags: ['new-tag'] };
+      await service.update(USER_ID, existing.id, dto);
+
+      expect(tagsService.upsertForUser).toHaveBeenCalledWith(USER_ID, [
+        'new-tag',
+      ]);
+      expect(mealPrepRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({ tags: newTags }),
+      );
+    });
+
+    it('does not call upsertForUser when tags field is absent', async () => {
+      const existing = makeMealPrep({ tags: [makeTag('kept')] });
+      mealPrepRepo.findOne.mockResolvedValue(existing);
+      mealPrepRepo.save.mockResolvedValue(existing);
+
+      await service.update(USER_ID, existing.id, {
+        instructions: 'New steps.',
+      });
+
+      expect(tagsService.upsertForUser).not.toHaveBeenCalled();
+    });
+
+    it('saves all fields when a full update dto is provided', async () => {
+      const existing = makeMealPrep();
+      const newTags = [makeTag('batch')];
+      mealPrepRepo.findOne.mockResolvedValue(existing);
+      mealPrepRepo.save.mockResolvedValue(existing);
+      tagsService.upsertForUser.mockResolvedValue(newTags);
+
+      const dto: UpdateMealPrepDto = {
+        carbs: 20,
+        fat: 8,
+        ingredients: [{ name: 'rice', quantity: '200g' }],
+        instructions: 'Cook rice.',
+        protein: 50,
+        tags: ['batch'],
+        title: 'Rice Bowl',
+      };
+      await service.update(USER_ID, existing.id, dto);
+
+      expect(mealPrepRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          carbs: 20,
+          fat: 8,
+          ingredients: [{ name: 'rice', quantity: '200g' }],
+          instructions: 'Cook rice.',
+          protein: 50,
+          tags: newTags,
+          title: 'Rice Bowl',
+        }),
+      );
+    });
+
+    it('throws NotFoundException when id does not exist', async () => {
+      mealPrepRepo.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.update(USER_ID, 'non-existent', { title: 'x' }),
+      ).rejects.toThrow(NotFoundException);
+      expect(mealPrepRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('throws NotFoundException when id belongs to a different user', async () => {
+      mealPrepRepo.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.update('other-user', 'mp-uuid-1', { title: 'x' }),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 
